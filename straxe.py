@@ -1,7 +1,9 @@
+import contextlib
 import curses
 import time
 import sys
 import re
+import random
 
 strace_re = re.compile('(\w+)\((\d*).*?(?:= (\d+).*)?$')
 
@@ -46,6 +48,26 @@ window.subpad([nlines, ncols], begin_y, begin_x)
 Return a sub-window, whose upper-left corner is at (begin_y, begin_x), and whose width/height is ncols/nlines.
 '''
 
+def log(*args):
+    open('log', 'a+').write(repr(args) + '\n')
+
+def colorize_line(line, colorizers=[]):
+    """ yield (color, text) pairs if the line matches the map.
+        the regular expressions should use the color name as the match name.
+        '(?P<GREEN>hello)'
+    """
+    answer = dict((i, 'PLAIN') for i in range(len(line)))
+    for regexp in colorizers:
+        m = re.search(regexp, line)
+        if m:
+            assert len(m.groups()) == 1, "Multiple Groups Not Supported"
+            for color, text in m.groupdict().items():
+                for i, c in enumerate(m.group(1), m.start()):
+                    answer[i] = color
+    for i, c in enumerate(line):
+        yield (c, answer[i])
+    return
+
 def get_lines(maxlines=5):
     """ get as many lines as possible from stdin without blocking """
     import fcntl, os
@@ -55,7 +77,7 @@ def get_lines(maxlines=5):
     while True:
         lines = []
         try:
-            for c in sys.stdin.read(1):
+            for c in sys.stdin.read(10):
                 curr += c
                 if c == '\n':
                     lines.append(curr)
@@ -68,8 +90,10 @@ def get_lines(maxlines=5):
 
 def main(w):
     xx, yy = (curses.COLS - 1), (curses.LINES - 1)
+    ww = w
     w = curses.newpad(yy, xx)
-    buckets = [' ' * yy] * xx
+    buckets = [list(colorize_line(' ' * yy)) for _ in range(xx)]
+    coloring = ['(?P<GREEN>SELECT)']
     for lines in get_lines():
         for line in lines:
             m = strace_re.match(line)
@@ -78,32 +102,38 @@ def main(w):
             else:
                 h = hash(m.groups())
             h %= len(buckets)
-            buckets[h] += line
-        redraw(w, buckets, width=xx-1, height=yy-1)
+            buckets[h] += list(colorize_line(line, coloring))
+        redraw(w, buckets, width=xx, height=yy-1, ww=ww)
 
 
-def redraw(w, buckets, width, height, force=False):
+def redraw(w, buckets, width, height, ww):
     # slide and buckets that need moving
     do = []
     for x, buff in enumerate(buckets):
-        if len(buff) >= height or force:
+        if len(buff) >= height:
             buckets[x] = buff[1:]
             do.append((x, buff))
     for x, vertical in do:
-        if 5 > x > 40:
-            continue
-        for y, c in enumerate(vertical[:height-2]):
-            try:
-                w.addch(y, x, ord(c))
-            except Exception:
-                raise ValueError((y, x))
+        for y, cpair in enumerate(vertical[:height]):
+            char, color = cpair
+            color = color_map[color]
+            w.attrset(curses.color_pair(color))
+            w.addch(y, x, ord(char))
         w.refresh(0, x, 0, x, height, x)
     return
 
+color_map = {}
+
 def start():
+    global color_map
     w = curses.initscr()
     curses.curs_set(0) # hide the cursor
+    curses.start_color() # announce it isn't 1985
     try:
+        color_map = {'PLAIN': 0, 'GREEN' : 1}
+        curses.init_pair(1, curses.COLOR_GREEN, curses.COLOR_BLACK)
+        curses.init_pair(2, curses.COLOR_WHITE, curses.COLOR_BLACK)
+        curses.init_pair(3, curses.COLOR_BLUE, curses.COLOR_BLACK)
         main(w)
     finally:
         curses.endwin()
