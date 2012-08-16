@@ -1,4 +1,6 @@
 
 
 hackfest:
-	cat strace.log | python tst.py
+	rm log
+	touch log
+	cat strace.log | python straxe.py
