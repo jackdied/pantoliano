@@ -4,4 +4,4 @@ works on linux.  For best results strace an apache server.
 
 (this was a hackathon project, the code has many smells)
 
-![Pantoliano Screen Shot](screenshot.gif)
+![Pantoliano Screen Shot](pantoliano/blob/master/screenshot.gif)
