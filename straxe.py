@@ -100,7 +100,7 @@ def redraw(w, buckets, width, height):
         if len(buff) >= height:
             buckets[x] = buff[1:]
             do.append((x, buff))
-    if len(do) > 0.3 * len(buckets):
+    if False and len(do) > 0.3 * len(buckets):
         redraw_fullscreen(w, buckets, width, height)
     else:
         redraw_incremental(w, do, width, height)
@@ -119,15 +119,16 @@ def print_this(w, cname, func, args):
     func(*args)
 
 def redraw_fullscreen(w, buckets, width, height):
-    for y in range(height-1):
+    for y in range(height-3):
         row = [bucket[y] for bucket in buckets]
         x = 0
         for color, pairs in it.groupby(row, lambda x:x[1]):
             text = ''.join(char for char, color in pairs)
             try:
-                print_this(w, color, w.addstr, (x, y, text))
+                log(color, x, y, text, len(text), len(row))
+                print_this(w, color, w.addstr, (y, x, text))
             except Exception:
-                raise ValueError((color, (x, y, text)))
+                raise ValueError((color, (x, y, text), len(row)))
             x += len(text)
     w.refresh(0, 0, 0, 0, height, width)
 
