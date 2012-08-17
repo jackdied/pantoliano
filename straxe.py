@@ -140,10 +140,7 @@ def redraw(w, buckets, width, height, bold=False):
         if len(buff) >= height:
             buckets[x] = buff[1:]
             do.append((x, buff))
-    if len(do) > (0.05 * len(buckets)):
-        redraw_fullscreen(w, buckets, width, height)
-    else:
-        redraw_incremental(w, do, width, height)
+    redraw_fullscreen(w, buckets, width, height)
 
 def print_this(w, cname, func, args):
     also = cname[-1]
