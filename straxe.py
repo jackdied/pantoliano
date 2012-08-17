@@ -1,4 +1,4 @@
-import contextlib
+import collections
 import curses
 import itertools as it
 import time
@@ -65,42 +65,82 @@ def get_lines(howlong=0.1):
                         break
             except IOError:
                 pass
-        log(len(lines), time.time() - endtime, time.time() < endtime, '%25.3f %25.3f %25.3f' % (start, time.time(), endtime))
+        #log(len(lines), time.time() - endtime, time.time() < endtime, '%25.3f %25.3f %25.3f' % (start, time.time(), endtime))
         yield lines
 
 
 strace_re = re.compile('(\w+)\((\d*).*?(?:= (\d+).*)?$')
 
+def jaccard(past, curr):
+    old = set()
+    for line in past:
+        old |= line
+    curr = set(curr)
+    try:
+        return float(len(old & curr)) /float(len(old | curr))
+    except ZeroDivisionError:
+        return 0
+
+def bucket_finder(past, curr):
+    # jaccard similarity
+    best = 0
+    which = None
+    scores = [jaccard(lines, curr) for lines in past]
+    #log(list('%4.2f' % v for v in scores))
+    for i, score in enumerate(scores):
+        if score > best:
+            best = score
+            which = i
+    return which + random.randrange(-3, 3)
+
 def main(w):
     xx, yy = (curses.COLS - 1), (curses.LINES - 1)
-    xx = 127
     w = curses.newpad(yy, xx)
-    buckets = [list(colorize_line(' ' * yy)) for _ in range(xx)]
+    buckets = [list(colorize_line(' ' * yy)) for _ in range(xx-1)]
+    the_past = [collections.deque([], 5) for _ in range(xx-1)]
     coloring = ['(?P<GREEN>SELECT)', '(?P<BLUE>(?:lstat|stat))', '^(?P<RED>writev)',
                 '"(?P<RED>HTTP/[^"]+)', '/data/code/(?P<CYAN>[^.]+\.\w*)',
                 '(?P<WHITEB>GET[^"]+)"', '(?P<YELLOWB>portal_\w+_\w+_\w+)',
                ]
+    count = 0
     for lines in get_lines():
         for line in lines:
+            line = line.replace('\n', ' ')
             m = strace_re.match(line)
-            if not m:
-                h = hash(line)
+            if count < len(buckets) * 5:
+                if m:
+                    h = hash(m.groups())
+                else:
+                    h = random.randrange(10, len(buckets))
+                h = h % len(buckets)
             else:
-                h = hash(m.groups())
-            h %= len(buckets)
+                h = max(0, min(len(buckets)-1, bucket_finder(the_past, line)))
+            #log('hash', h)
+            the_past[h].append(tokenize(line))
             if len(buckets[h]) < 1024 * 5: # skip backlogs
                 buckets[h] += list(colorize_line(line, coloring))
-        redraw(w, buckets, width=xx, height=yy-1)
+            count += 1
+        redraw(w, buckets, width=xx, height=yy-1, bold=(count < buckets * 50))
 
+def tokenize(line):
+    parts = line.split()
+    out = set()
+    for part in parts:
+        if re.match('^[a-zA-Z0-9]+$', part):
+            out.add(part)
+    return out
 
-def redraw(w, buckets, width, height):
+def xtokenize(line):
+    return set(line.split())
+
+def redraw(w, buckets, width, height, bold=False):
     # slide and buckets that need moving
     do = []
     for x, buff in enumerate(buckets):
         if len(buff) >= height:
             buckets[x] = buff[1:]
             do.append((x, buff))
-    if False and len(do) > 0.3 * len(buckets):
+    if len(do) > (0.05 * len(buckets)):
         redraw_fullscreen(w, buckets, width, height)
     else:
         redraw_incremental(w, do, width, height)
@@ -125,7 +165,7 @@ def redraw_fullscreen(w, buckets, width, height):
         for color, pairs in it.groupby(row, lambda x:x[1]):
             text = ''.join(char for char, color in pairs)
             try:
-                log(color, x, y, text, len(text), len(row))
+                #log(color, x, y, text, len(text), len(row))
                 print_this(w, color, w.addstr, (y, x, text))
             except Exception:
                 raise ValueError((color, (x, y, text), len(row)))
